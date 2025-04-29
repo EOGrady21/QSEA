@@ -1,0 +1,9 @@
+dash>=2.10.0
+dash-bootstrap-components>=1.4.0
+plotly>=5.10.0
+pandas>=1.5.0
+numpy>=1.20.0
+# Optional but likely needed for specific QC tests:
+gsw
+global_land_mask
+geopy # Potentially useful for distance calculations
