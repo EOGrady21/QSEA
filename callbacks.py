@@ -1,3 +1,18 @@
+"""
+Callbacks Module for Quality System Evaluation Application
+
+This module contains all the callback functions that handle the interactive
+elements of the application. Callbacks connect user actions (like clicking buttons
+or uploading files) to changes in the application state and user interface.
+
+Key functionality includes:
+- Processing uploaded data files
+- Running automated quality control checks
+- Updating visualizations and data tables
+- Handling manual data review and flag changes
+- Generating and downloading reports and data files
+"""
+
 import dash
 from dash import dcc, html, dash_table, callback, ctx
 from dash.dependencies import Input, Output, State
@@ -38,6 +53,31 @@ MAX_TABLE_ROWS = 5000 # Adjust as needed
     prevent_initial_call=True
 )
 def process_upload(contents, filename, sme_username):
+    """
+    Processes uploaded data files and runs automated quality control checks.
+
+    This callback is triggered when a user uploads a file. It:
+    1. Loads external reference data needed for QC checks
+    2. Parses the uploaded file into a pandas DataFrame
+    3. Runs automated quality control checks on the data
+    4. Prepares the data for display and storage
+    5. Updates the UI to show the data and enable review features
+
+    Args:
+        contents (str): Base64-encoded contents of the uploaded file
+        filename (str): Name of the uploaded file
+        sme_username (str): Username of the person uploading the file
+
+    Returns:
+        tuple: Multiple outputs that update various parts of the UI:
+            - Processed data for storage
+            - Filename for storage
+            - Username for storage
+            - Status message about the upload
+            - Display settings for tabs
+            - Display settings for review panel
+            - Display settings for output buttons
+    """
     if contents is None:
         raise PreventUpdate
 
@@ -112,6 +152,30 @@ def process_upload(contents, filename, sme_username):
     prevent_initial_call=True
 )
 def update_visualizations_and_table(data_dict, filename):
+    """
+    Updates all visualizations and the data table when new data is loaded.
+
+    This callback is triggered whenever the data store changes (e.g., after a file
+    upload or after data is modified). It creates several visualizations:
+    1. A map showing the geographic locations of data points
+    2. Profile or time series plots of the data
+    3. Temperature-salinity plots and nutrient plots
+    4. Quality control comparison plots
+    5. A data table showing the raw data with quality flags
+
+    Args:
+        data_dict (list): List of dictionaries representing the data (from DataFrame.to_dict('records'))
+        filename (str): Name of the data file being displayed
+
+    Returns:
+        tuple: Multiple outputs that update various parts of the UI:
+            - Map figure
+            - Profile/time series figure
+            - T-S/nutrient figure
+            - QC comparison figure
+            - Data table component
+            - Information about the displayed data
+    """
     if data_dict is None:
         print("Update Viz: No data in store.")
         # Return empty figures and table placeholder
@@ -319,6 +383,31 @@ def update_visualizations_and_table(data_dict, filename):
     prevent_initial_call=True
 )
 def update_review_panel(selected_rows, table_data, stored_data_dict):
+    """
+    Updates the review panel based on selected rows in the data table.
+
+    This callback is triggered when a user selects rows in the data table. It:
+    1. Shows details of the selected data point(s)
+    2. Enables controls for changing the quality flag
+    3. Provides a text area for adding comments about the change
+
+    If a single row is selected, detailed information about that data point is shown.
+    If multiple rows are selected, only the count of selected rows is shown.
+
+    Args:
+        selected_rows (list): Indices of the selected rows in the data table
+        table_data (list): Data currently displayed in the table
+        stored_data_dict (list): Complete dataset stored in the application
+
+    Returns:
+        tuple: Multiple outputs that update the review panel:
+            - Content to display above the controls
+            - Display settings for the review panel
+            - Display settings for the controls container
+            - Current flag value for the dropdown
+            - Empty string for the comment text area
+            - Options for the flag dropdown
+    """
     if selected_rows is None or len(selected_rows) == 0 or stored_data_dict is None:
         # No rows selected or no data loaded:
         # Hide the entire panel
@@ -427,6 +516,34 @@ def update_review_panel(selected_rows, table_data, stored_data_dict):
     prevent_initial_call=True
 )
 def submit_review(n_clicks, selected_rows, new_flag, sme_comment, stored_data_dict, sme_username, filename, table_data):
+    """
+    Processes the submission of a manual quality control review.
+
+    This callback is triggered when a user clicks the 'Submit Review' button. It:
+    1. Validates the input (selected rows, new flag, comment)
+    2. Updates the quality flags for the selected data points
+    3. Logs the review action for traceability
+    4. Updates the stored data with the new flags
+    5. Provides feedback about the review submission
+
+    Args:
+        n_clicks (int): Number of times the submit button has been clicked
+        selected_rows (list): Indices of the selected rows in the data table
+        new_flag (int): The new quality flag value selected by the user
+        sme_comment (str): Comment explaining the reason for the flag change
+        stored_data_dict (list): Complete dataset stored in the application
+        sme_username (str): Username of the person submitting the review
+        filename (str): Name of the data file being reviewed
+        table_data (list): Data currently displayed in the table
+
+    Returns:
+        tuple: Multiple outputs that update the UI after submission:
+            - Updated data for storage
+            - Status message about the submission
+            - Empty list to clear selected rows
+            - Display settings to hide the review panel
+            - Display settings to hide the controls container
+    """
     if n_clicks == 0 or selected_rows is None or len(selected_rows) == 0 or stored_data_dict is None:
         raise PreventUpdate
 
@@ -530,6 +647,25 @@ def submit_review(n_clicks, selected_rows, new_flag, sme_comment, stored_data_di
     prevent_initial_call=True
 )
 def download_csv(n_clicks, stored_data_dict, filename):
+    """
+    Prepares and downloads the quality-controlled data as a CSV file.
+
+    This callback is triggered when a user clicks the 'Download Updated CSV' button. It:
+    1. Checks if all data points have been properly reviewed (no flag 7 remaining)
+    2. Formats the data for output with all original columns in the correct order
+    3. Generates a CSV file with the updated quality flags
+    4. Provides the file for download
+
+    Args:
+        n_clicks (int): Number of times the download button has been clicked
+        stored_data_dict (list): Complete dataset stored in the application
+        filename (str): Name of the original data file
+
+    Returns:
+        tuple: (download data, status message)
+            - If successful: (CSV file data, success message)
+            - If failed: (None, error message)
+    """
     if n_clicks == 0 or stored_data_dict is None:
         raise PreventUpdate
 
@@ -566,6 +702,24 @@ def download_csv(n_clicks, stored_data_dict, filename):
     prevent_initial_call=True
 )
 def download_report(n_clicks, stored_data_dict, filename, sme_username):
+    """
+    Generates and downloads a summary report of the quality control process.
+
+    This callback is triggered when a user clicks the 'Download Summary Report' button. It:
+    1. Creates a text report summarizing the quality control process and results
+    2. Includes statistics about automatic and manual quality flags
+    3. Provides the report as a downloadable text file
+
+    Args:
+        n_clicks (int): Number of times the download button has been clicked
+        stored_data_dict (list): Complete dataset stored in the application
+        filename (str): Name of the original data file
+        sme_username (str): Username of the person who reviewed the data
+
+    Returns:
+        dict or None: Dictionary with report content and filename for download,
+                     or None if an error occurs (with PreventUpdate)
+    """
     if n_clicks == 0 or stored_data_dict is None:
         raise PreventUpdate
 
@@ -591,6 +745,24 @@ def download_report(n_clicks, stored_data_dict, filename, sme_username):
     prevent_initial_call=True
 )
 def filter_table_on_map_click(clickData):
+    """
+    Filters the data table based on a point clicked on the map.
+
+    This callback is triggered when a user clicks on a point in the map. It:
+    1. Extracts the latitude and longitude of the clicked point
+    2. Creates a filter query to show only data points at that location
+    3. Applies the filter to the data table
+
+    Note: This is a placeholder implementation that is currently disabled.
+    A more robust implementation would be needed for production use.
+
+    Args:
+        clickData (dict): Data about the clicked point on the map
+
+    Returns:
+        str or None: Filter query string for the data table,
+                    or None with PreventUpdate if filtering is not implemented
+    """
     if clickData is None:
         raise PreventUpdate
 

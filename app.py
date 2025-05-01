@@ -1,3 +1,13 @@
+"""
+Quality System Evaluation Application (QSEA)
+
+This application provides a user interface for reviewing and quality-controlling
+oceanographic data. It allows users to upload data files, visualize the data in
+various ways, perform quality control checks, and download the reviewed data.
+
+The application is built using Dash, a Python framework for building web applications.
+"""
+
 import dash
 import dash_bootstrap_components as dbc
 from dash import dcc, html, dash_table
@@ -13,6 +23,16 @@ server = app.server # Expose server for deployment (e.g., Gunicorn)
 
 # --- Reusable Components ---
 def build_upload_section():
+    """
+    Creates the upload section of the application.
+
+    This section allows users to:
+    1. Enter their username (for logging purposes)
+    2. Upload a CSV data file by dragging and dropping or selecting from their computer
+
+    Returns:
+        A Dash Bootstrap Card component containing the upload interface
+    """
     return dbc.Card(
         dbc.CardBody([
             html.H4("1. Upload Data & Reviewer Info", className="card-title"),
@@ -45,6 +65,20 @@ def build_upload_section():
     )
 
 def build_review_panel():
+    """
+    Creates the manual review panel of the application.
+
+    This panel allows users to:
+    1. View details of selected data points
+    2. Change quality flags for selected data
+    3. Add comments explaining their changes
+    4. Submit their reviews
+
+    The panel is initially hidden and becomes visible when data is selected.
+
+    Returns:
+        A Dash Bootstrap Card component containing the review interface
+    """
     return dbc.Card(
         dbc.CardBody([
             html.H4("3. Manual Review Panel", className="card-title"),
@@ -77,7 +111,19 @@ def build_review_panel():
     )
 
 def build_output_section():
-     return dbc.Card(
+    """
+    Creates the download results section of the application.
+
+    This section allows users to:
+    1. Download the updated CSV file with quality flags
+    2. Download a summary report of the quality control process
+
+    The section is initially hidden and becomes visible when data is loaded.
+
+    Returns:
+        A Dash Bootstrap Card component containing download buttons
+    """
+    return dbc.Card(
          dbc.CardBody([
              html.H4("4. Download Results", className="card-title"),
              html.Button("Download Updated CSV", id="button-download-csv", className="btn btn-success", style={'marginRight': '10px'}),

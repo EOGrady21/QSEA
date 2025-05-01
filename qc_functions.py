@@ -1,3 +1,19 @@
+"""
+Quality Control Functions Module for Quality System Evaluation Application
+
+This module contains functions for performing automated quality control checks
+on oceanographic data. It implements various tests based on standard oceanographic
+quality control procedures.
+
+The tests are organized into categories:
+1. Platform/Metadata Tests: Check basic information like platform ID, date/time, location
+2. Physical/Oceanographic Tests: Check data values against expected ranges and patterns
+3. Statistical Tests: Compare data to climatology and other statistical references
+
+Each test function modifies the DataFrame in place, updating quality flags and
+adding details about which tests failed for each data point.
+"""
+
 import pandas as pd
 import numpy as np
 from file_handling import QC_FLAG_SEVERITY # Import severity mapping
@@ -22,7 +38,24 @@ except ImportError:
 
 # --- Helper Function to Update Flags ---
 def update_flags(df, indices, test_name, flag_value):
-    """Updates auto_qc_flag and auto_qc_details for given indices."""
+    """
+    Updates quality flags and details for data points that fail a quality control test.
+
+    This helper function is called by individual test functions when they identify
+    data points that fail their checks. It:
+    1. Updates the auto_qc_flag only if the new flag is more severe than the existing one
+    2. Adds the test name to the auto_qc_details list for each failed data point
+
+    Args:
+        df (pandas.DataFrame): The DataFrame containing the data being quality controlled
+        indices (pandas.Index): Indices of the data points that failed the test
+        test_name (str): Name of the test that was performed (e.g., "1.1_PlatformID")
+        flag_value (int): Quality flag value to assign (from QC_FLAG_DEFINITIONS)
+
+    Note:
+        This function modifies the DataFrame in place and does not return a value.
+        The severity of flags is determined by the QC_FLAG_SEVERITY mapping.
+    """
     current_flags = df.loc[indices, 'auto_qc_flag']
     current_severity = current_flags.map(QC_FLAG_SEVERITY).fillna(0) # Handle potential NaN
     new_severity = QC_FLAG_SEVERITY.get(flag_value, 0)
@@ -592,7 +625,30 @@ def test_3_5_3_6_climatology(df, external_data):
 # --- Main QC Execution Function ---
 
 def run_all_qc(df, external_data):
-    """Runs all automated QC checks and updates the DataFrame."""
+    """
+    Runs all automated quality control checks on the data.
+
+    This is the main function that orchestrates the quality control process. It:
+    1. Prepares the DataFrame by initializing quality flag columns
+    2. Runs each quality control test in sequence
+    3. Finalizes the results by converting quality details to a display format
+    4. Sets the initial final quality flags based on the automated results
+
+    The function calls all the individual test functions, each of which may update
+    the quality flags and details for data points that fail their checks.
+
+    Args:
+        df (pandas.DataFrame): The DataFrame containing the data to quality control
+        external_data (dict): Dictionary of external reference data needed for some tests
+            (e.g., global ranges, regional ranges, climatology)
+
+    Returns:
+        pandas.DataFrame: The DataFrame with updated quality flags and details
+
+    Note:
+        This function modifies the input DataFrame in place, but also returns it
+        for convenience in chaining operations.
+    """
     if df is None:
         return df # Return None if input df is None
 

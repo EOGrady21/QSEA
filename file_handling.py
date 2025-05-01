@@ -1,3 +1,17 @@
+"""
+File Handling Module for Quality System Evaluation Application
+
+This module handles all file operations for the application, including:
+- Parsing uploaded data files
+- Loading external reference data
+- Formatting data for output
+- Generating summary reports
+- Logging user actions
+
+It also defines constants used throughout the application for data validation
+and quality control.
+"""
+
 import pandas as pd
 import base64
 import io
@@ -133,8 +147,23 @@ def robust_datetime_parser(date_val, time_val):
 
 def parse_uploaded_file(contents, filename):
     """
-    Parses the uploaded CSV file content, performs type conversions,
-    and uses a robust parser for date and time columns.
+    Parses the uploaded CSV file content and prepares it for use in the application.
+
+    This function:
+    1. Decodes the base64-encoded file content
+    2. Reads the CSV data into a pandas DataFrame
+    3. Validates that all required columns are present
+    4. Converts data types (numbers, dates, etc.)
+    5. Applies the robust datetime parser to date/time fields
+
+    Args:
+        contents (str): Base64-encoded contents of the uploaded file
+        filename (str): Name of the uploaded file
+
+    Returns:
+        tuple: (DataFrame or None, status message)
+            - If successful: (DataFrame with parsed data, success message)
+            - If failed: (None, error message describing the problem)
     """
     if contents is None:
         return None, "Error: No file content received."
@@ -239,7 +268,20 @@ def parse_uploaded_file(contents, filename):
 
 
 def load_external_data():
-    """Loads external data files needed for QC checks."""
+    """
+    Loads external data files needed for quality control checks.
+
+    This function attempts to load all external data files defined in EXTERNAL_DATA_PATHS,
+    such as global ranges, regional ranges, profile envelopes, and climatology data.
+    If a file is not found or cannot be loaded, a warning is recorded and None is stored
+    for that data type.
+
+    Returns:
+        tuple: (external_data, errors)
+            - external_data (dict): Dictionary mapping data names to pandas DataFrames
+              (or None if loading failed)
+            - errors (list): List of error/warning messages encountered during loading
+    """
     external_data = {}
     errors = []
     for name, path in EXTERNAL_DATA_PATHS.items():
@@ -257,7 +299,20 @@ def load_external_data():
 
 
 def format_dataframe_for_output(df):
-    """Ensures the DataFrame has the original columns in the correct order for output."""
+    """
+    Prepares a DataFrame for output by ensuring it has all expected columns in the correct order.
+
+    This function:
+    1. Checks if all expected columns exist in the DataFrame
+    2. Adds any missing columns with NA values
+    3. Reorders the columns to match the expected order
+
+    Args:
+        df (pandas.DataFrame): The DataFrame to format for output
+
+    Returns:
+        pandas.DataFrame: A new DataFrame with all expected columns in the correct order
+    """
     # Make sure all expected columns exist, add if missing (filled with NaN or default)
     for col in EXPECTED_COLUMNS:
         if col not in df.columns:
@@ -268,14 +323,45 @@ def format_dataframe_for_output(df):
     return output_df
 
 def sanitize_filename(filename):
-    """Removes or replaces characters unsuitable for filenames."""
+    """
+    Cleans a filename by removing or replacing characters that are not safe for file systems.
+
+    This function:
+    1. Removes special characters that are problematic in filenames (/, \, :, *, ?, ", <>, |)
+    2. Replaces spaces with underscores
+    3. Ensures the filename is suitable for use across different operating systems
+
+    Args:
+        filename (str): The original filename to sanitize
+
+    Returns:
+        str: A sanitized version of the filename that is safe to use in file systems
+    """
     # Remove potentially problematic characters like /, \, :, *, ?, ", <>, |
     sanitized = "".join(c for c in filename if c.isalnum() or c in (' ', '.', '_', '-')).rstrip()
     sanitized = sanitized.replace(' ', '_') # Replace spaces with underscores
     return sanitized
 
 def append_to_log(log_data, mission_descriptor):
-    """Appends QC review actions to a mission-specific log file."""
+    """
+    Records quality control review actions in a mission-specific log file.
+
+    This function creates or appends to a log file that tracks all manual review
+    actions taken for a specific mission. Each log entry includes:
+    - Timestamp of the review
+    - Details of the data point that was reviewed
+    - The original and new quality flags
+    - The reviewer's username and comments
+
+    Args:
+        log_data (dict): Dictionary containing the review information to log
+            (must include keys for timestamp, data details, flags, username, and comments)
+        mission_descriptor (str): Identifier for the mission being reviewed,
+            used to create a mission-specific log file
+
+    Returns:
+        None: The function writes to a log file but does not return a value
+    """
     if not mission_descriptor:
         print("Error: Cannot log review - Mission Descriptor is missing.")
         return
@@ -297,7 +383,25 @@ def append_to_log(log_data, mission_descriptor):
 
 
 def generate_summary_report(df, filename, sme_username):
-    """Generates a text summary report of the QC process."""
+    """
+    Creates a detailed text report summarizing the quality control process and results.
+
+    This report includes:
+    - Basic information about the file and reviewer
+    - Summary of the mission(s) included in the data
+    - Counts of automatic quality flags assigned by the system
+    - Breakdown of which quality tests failed and how many times
+    - Summary of final quality flags after manual review
+    - Count of records that were manually changed
+
+    Args:
+        df (pandas.DataFrame): The DataFrame containing the quality-controlled data
+        filename (str): The name of the original data file
+        sme_username (str): The username of the person who reviewed the data
+
+    Returns:
+        str: A formatted text report summarizing the quality control process
+    """
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     mission_descriptor = df['MISSION_DESCRIPTOR'].unique()
     mission_str = ', '.join(map(str, mission_descriptor)) if len(mission_descriptor) > 0 else "N/A"
