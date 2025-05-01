@@ -33,61 +33,209 @@ EXTERNAL_DATA_PATHS = {
     # Add paths for other required external data
 }
 
+def robust_datetime_parser(date_val, time_val):
+    """
+    Parses date and time values from various formats into a single datetime object.
+
+    Handles common date formats (YYYYMMDD, DD-MON-YY, DD-MON-YYYY, MM/DD/YYYY)
+    and time formats (HHMM, HH:MM, HHMMSS, HH:MM:SS).
+
+    Args:
+        date_val: The date value/string.
+        time_val: The time value/string.
+
+    Returns:
+        pandas.Timestamp: The parsed datetime object, or pd.NaT if parsing fails.
+    """
+    parsed_datetime = pd.NaT # Initialize with Not a Time
+
+    # --- 1. Parse Date ---
+    date_str = str(date_val)
+    parsed_date = pd.NaT
+    possible_date_formats = [
+        '%Y%m%d',        # YYYYMMDD
+        '%d-%b-%y',      # DD-MON-YY (e.g., 01-Jan-25) - Case-insensitive month handled by pandas
+        '%d-%b-%Y',      # DD-MON-YYYY (e.g., 01-Jan-2025)
+        '%m/%d/%Y',      # MM/DD/YYYY
+        '%Y/%m/%d',      # YYYY/MM/DD
+        '%m-%d-%Y',      # MM-DD-YYYY
+        '%Y-%m-%d'       # YYYY-MM-DD (ISO-like)
+    ]
+
+    # Try specific formats first
+    for fmt in possible_date_formats:
+        parsed_date = pd.to_datetime(date_str, format=fmt, errors='coerce')
+        if not pd.isna(parsed_date):
+            break # Stop if successfully parsed
+
+    # If specific formats failed, try letting pandas infer
+    if pd.isna(parsed_date):
+         # infer_datetime_format can be faster for consistent formats but less flexible
+         # Using errors='coerce' without specific format lets pandas try harder
+         parsed_date = pd.to_datetime(date_str, errors='coerce')
+
+    # If date parsing failed, we can't proceed
+    if pd.isna(parsed_date):
+        return pd.NaT
+
+    # --- 2. Parse Time ---
+    time_str = str(time_val).strip()
+    parsed_time_str = "00:00:00" # Default to midnight if time is invalid/missing
+
+    # Normalize time string (remove colons, handle potential floats like 1400.0)
+    if '.' in time_str: # Handle cases like 1400.0
+        time_str = time_str.split('.')[0]
+
+    time_str_cleaned = time_str.replace(':', '')
+
+    try:
+        if len(time_str_cleaned) == 4: # HHMM
+            hour = int(time_str_cleaned[:2])
+            minute = int(time_str_cleaned[2:])
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                 parsed_time_str = f"{hour:02d}:{minute:02d}:00"
+        elif len(time_str_cleaned) == 6: # HHMMSS
+            hour = int(time_str_cleaned[:2])
+            minute = int(time_str_cleaned[2:4])
+            second = int(time_str_cleaned[4:])
+            if 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59:
+                parsed_time_str = f"{hour:02d}:{minute:02d}:{second:02d}"
+        elif ':' in time_str: # Check original string for HH:MM or HH:MM:SS
+             parts = time_str.split(':')
+             if len(parts) == 2: # HH:MM
+                 hour = int(parts[0])
+                 minute = int(parts[1])
+                 if 0 <= hour <= 23 and 0 <= minute <= 59:
+                     parsed_time_str = f"{hour:02d}:{minute:02d}:00"
+             elif len(parts) == 3: # HH:MM:SS
+                 hour = int(parts[0])
+                 minute = int(parts[1])
+                 second = int(parts[2])
+                 if 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59:
+                     parsed_time_str = f"{hour:02d}:{minute:02d}:{second:02d}"
+    except (ValueError, TypeError):
+        # If any conversion fails, keep the default "00:00:00"
+        pass
+
+
+    # --- 3. Combine Date and Time ---
+    try:
+        # Format date to YYYY-MM-DD before combining
+        date_part_str = parsed_date.strftime('%Y-%m-%d')
+        datetime_str_to_parse = f"{date_part_str} {parsed_time_str}"
+        # Final parse of the standardized combined string
+        parsed_datetime = pd.to_datetime(datetime_str_to_parse, format='%Y-%m-%d %H:%M:%S', errors='raise') # Raise error here if final combo is bad
+    except Exception as e:
+         # print(f"Could not combine date '{date_val}' and time '{time_val}'. Error: {e}") # Optional: for debugging
+         parsed_datetime = pd.NaT # Ensure NaT on failure
+
+    return parsed_datetime
+
 def parse_uploaded_file(contents, filename):
-    """Parses the uploaded CSV file content."""
+    """
+    Parses the uploaded CSV file content, performs type conversions,
+    and uses a robust parser for date and time columns.
+    """
     if contents is None:
         return None, "Error: No file content received."
 
-    content_type, content_string = contents.split(',')
-    decoded = base64.b64decode(content_string)
     try:
-        if 'csv' in filename:
+        content_type, content_string = contents.split(',')
+        decoded = base64.b64decode(content_string)
+    except Exception as e:
+        return None, f"Error decoding file content: {e}. Ensure the file upload format is correct."
+
+    try:
+        if 'csv' in filename.lower(): # Use lower() for case-insensitive check
             # Assume the user uploaded a CSV file
-            df = pd.read_csv(io.StringIO(decoded.decode('utf-8')), low_memory=False) # Added low_memory=False
-        # elif 'xls' in filename: # Add support for excel if needed
-        #     df = pd.read_excel(io.BytesIO(decoded))
+            # Try UTF-8 first, then fall back to latin1 or others if needed
+            try:
+                df = pd.read_csv(io.StringIO(decoded.decode('utf-8')), low_memory=False)
+            except UnicodeDecodeError:
+                try:
+                    df = pd.read_csv(io.StringIO(decoded.decode('latin1')), low_memory=False)
+                    print("Warning: File decoded using latin1 encoding.")
+                except Exception as decode_err:
+                     return None, f"Error decoding CSV file '{filename}' with utf-8 or latin1: {decode_err}"
+
+        # elif 'xls' in filename.lower(): # Example: Add support for excel
+        #     try:
+        #         df = pd.read_excel(io.BytesIO(decoded))
+        #     except Exception as excel_err:
+        #         return None, f"Error reading Excel file '{filename}': {excel_err}"
         else:
-            return None, f"Error: File type not supported for '{filename}'. Please upload a CSV."
+            return None, f"Error: File type not supported for '{filename}'. Please upload a CSV." # or supported type
 
         # --- Column Validation ---
+        # Ensure case-insensitivity if column names might vary
+        df.columns = df.columns.str.strip() # Remove leading/trailing whitespace from headers
         missing_cols = [col for col in EXPECTED_COLUMNS if col not in df.columns]
         if missing_cols:
-            return None, f"Error: Missing expected columns: {', '.join(missing_cols)}"
+            # Provide more context about available columns for easier debugging
+            available_cols = ', '.join(df.columns)
+            return None, f"Error: Missing expected columns: {', '.join(missing_cols)}. Available columns: {available_cols}"
+
         extra_cols = [col for col in df.columns if col not in EXPECTED_COLUMNS]
         if extra_cols:
              print(f"Warning: Extra columns found and ignored: {', '.join(extra_cols)}")
-             # Optionally drop extra columns: df = df[EXPECTED_COLUMNS]
+             # Optionally drop extra columns if strict adherence is needed:
+             # df = df[EXPECTED_COLUMNS]
 
-        # --- Data Type Conversion (Crucial!) ---
+        # --- Data Type Conversion ---
+        print("Starting data type conversion...") # Debugging print
         try:
+            # Convert numeric columns, coercing errors to NaN
             df['DIS_HEADER_SLAT'] = pd.to_numeric(df['DIS_HEADER_SLAT'], errors='coerce')
             df['DIS_HEADER_SLON'] = pd.to_numeric(df['DIS_HEADER_SLON'], errors='coerce')
             df['DIS_HEADER_START_DEPTH'] = pd.to_numeric(df['DIS_HEADER_START_DEPTH'], errors='coerce')
             df['DIS_DETAIL_DATA_VALUE'] = pd.to_numeric(df['DIS_DETAIL_DATA_VALUE'], errors='coerce')
-            # Combine Date and Time and convert - Robust parsing needed
-            # Handle potential variations in time format (HHMMSS, HH:MM:SS, etc.)
-            # Assuming DIS_HEADER_STIME might be numeric like HHMMSS or string HH:MM:SS
-            df['DIS_HEADER_STIME_STR'] = df['DIS_HEADER_STIME'].astype(str).str.zfill(6) # Pad if numeric like HHMMSS
-            df['DIS_HEADER_STIME_STR'] = df['DIS_HEADER_STIME_STR'].str.replace(r'(\d{2})(\d{2})(\d{2})', r'\1:\2:\3', regex=True)
-            # Combine date (YYYYMMDD) and formatted time
-            df['DATETIME_STR'] = df['DIS_HEADER_SDATE'].astype(str) + ' ' + df['DIS_HEADER_STIME_STR']
-            df['DATETIME'] = pd.to_datetime(df['DATETIME_STR'], format='%Y%m%d %H:%M:%S', errors='coerce')
 
-            # Ensure QC code is integer
+            # Ensure QC code is integer, handling potential NaNs from coercion
             df['DIS_DETAIL_DATA_QC_CODE'] = pd.to_numeric(df['DIS_DETAIL_DATA_QC_CODE'], errors='coerce').fillna(0).astype(int)
 
+            # *** Use the robust datetime parser ***
+            print("Applying robust datetime parser...") # Debugging print
+            if 'DIS_HEADER_SDATE' in df.columns and 'DIS_HEADER_STIME' in df.columns:
+                 df['DATETIME'] = df.apply(
+                     lambda row: robust_datetime_parser(row['DIS_HEADER_SDATE'], row['DIS_HEADER_STIME']),
+                     axis=1
+                 )
+            else:
+                 # Handle case where date/time columns might be missing despite EXPECTED_COLUMNS check
+                 # (e.g., if validation logic changes)
+                 return None, "Error: Required date/time columns (DIS_HEADER_SDATE, DIS_HEADER_STIME) not found for parsing."
+
+            # Check how many datetimes failed parsing
+            failed_parses = df['DATETIME'].isna().sum()
+            if failed_parses > 0:
+                print(f"Warning: {failed_parses} rows failed datetime parsing and resulted in NaT.")
+                # Consider logging specific rows or returning an error if too many fail
+
+            print("Data type conversion finished.") # Debugging print
+
+        except KeyError as ke:
+             # This might happen if a column name is misspelled or missing despite initial check
+             return None, f"Error during data type conversion: Missing column {ke}."
         except Exception as e:
-             return None, f"Error during data type conversion: {e}. Check columns like SLAT, SLON, DEPTH, VALUE, SDATE, STIME."
+             # Catch other potential errors during conversion/parsing
+             return None, f"Error during data type conversion or parsing: {e}."
 
-        # Initialise QC columns if they dont exist (or reset them)
+        # --- Initialize QC Columns ---
+        # Ensure these are always present after processing
         df['auto_qc_flag'] = 0 # Default to NoQC initially
-        df['auto_qc_details'] = [[] for _ in range(len(df))] # Use lists to store multiple failed tests
+        # Initialize with empty lists using a safe method
+        df['auto_qc_details'] = [[] for _ in range(len(df))]
 
+        print(f"Successfully loaded and parsed '{filename}'.") # Debugging print
         return df, f"Successfully loaded and parsed '{filename}'."
 
     except Exception as e:
-        print(e) # Log the full error for debugging
-        return None, f"Error processing file '{filename}': {e}. Ensure it is a valid CSV with UTF-8 encoding."
+        # General catch-all for errors during file reading or initial processing
+        import traceback
+        print(f"Critical error processing file '{filename}': {e}")
+        print(traceback.format_exc()) # Log the full traceback for debugging
+        return None, f"Error processing file '{filename}': {e}. Ensure it is a valid CSV with appropriate encoding."
+
 
 
 def load_external_data():
