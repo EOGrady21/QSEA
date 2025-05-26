@@ -371,12 +371,11 @@ def update_visualizations_and_table(data_dict, filename):
     Output('review-panel', 'style', allow_duplicate=True),
     # Control the visibility of the controls container
     Output('review-controls-container', 'style', allow_duplicate=True),
-    # Update the dropdown value
-    Output('dropdown-final-flag', 'value'),
+    # Update the store value
+    Output('selected-qc-flag-store', 'data', allow_duplicate=True),
     # Update the textarea value (clear it)
-    Output('textarea-sme-comment', 'value'),
-    # You might also need to update dropdown options if they are dynamic
-    Output('dropdown-final-flag', 'options'), # Add this Output
+    Output('textarea-sme-comment', 'value', allow_duplicate=True),
+    # REMOVED: Output('selected-qc-flag-store', 'options') - Store doesn't have options
     Input('data-table', 'selected_rows'),
     State('data-table', 'data'),
     State('store-data', 'data'),
@@ -410,36 +409,13 @@ def update_review_panel(selected_rows, table_data, stored_data_dict):
     """
     if selected_rows is None or len(selected_rows) == 0 or stored_data_dict is None:
         # No rows selected or no data loaded:
-        # Hide the entire panel
-        # Hide the controls container
-        # Reset dropdown/textarea values
-        # Reset text above controls
         return ("Select rows in the table to review.",
                 {'display': 'none'},  # Hide panel
                 {'display': 'none'},  # Hide controls
-                None, "", REVIEW_FLAG_OPTIONS)  # Reset values, set options
+                None,  # Clear store value
+                "")  # Clear comment
 
     df_full = pd.DataFrame(stored_data_dict)
-    # Map selected row indices (from potentially filtered/paged table data) back to the full dataframe index
-    # This is crucial if the table data ('data') is different from the full stored data
-    # Note: `selected_rows` gives indices relative to the *current* `data` property of the DataTable
-    # If using native filtering/sorting, `data` reflects the filtered/sorted state.
-    # If only showing a subset (e.g., .head(MAX_TABLE_ROWS)), selected_rows refers to that subset.
-    # We need the identifier (e.g., original index or DIS_SAMPLE_KEY_VALUE) from the selected rows
-    # to reliably find them in the full dataframe stored in dcc.Store.
-
-    # Assuming `table_data` corresponds directly to the rows displayed,
-    # and we have a unique identifier like 'DIS_SAMPLE_KEY_VALUE' or we use the original index if preserved.
-    # If 'DIS_SAMPLE_KEY_VALUE' is unique:
-    # selected_keys = [table_data[i]['DIS_SAMPLE_KEY_VALUE'] for i in selected_rows]
-    # selected_df_rows = df_full[df_full['DIS_SAMPLE_KEY_VALUE'].isin(selected_keys)]
-    # Alternative using index if table data is just a filtered view of stored data:
-    # This assumes the order in table_data matches the order in stored_data_dict *after filtering*
-    # A safer way is often to include the original index or a unique ID in the table data itself.
-    # For simplicity here, we'll try and use the indices directly, assuming they map correctly for now.
-    # WARNING: This mapping might be fragile with native filtering/pagination if not handled carefully.
-    # A robust solution often involves getting `derived_virtual_indices` or `derived_viewport_indices`.
-    # Let's fetch data based on selected row indices from the potentially filtered `table_data`
     selected_row_data = [table_data[i] for i in selected_rows]
     num_selected = len(selected_row_data)
 
@@ -466,48 +442,24 @@ def update_review_panel(selected_rows, table_data, stored_data_dict):
         details_content = html.Strong(f"{num_selected} rows selected.")
         current_final_flag = None  # Don't pre-select flag for multi-edit
 
-    # Enable review controls
-    review_controls = html.Div([
-         dcc.Dropdown(
-             id='dropdown-final-flag',
-             options=REVIEW_FLAG_OPTIONS,
-             placeholder="Select New Final Flag",
-             value=current_final_flag, # Pre-select if single row
-             clearable=False,
-             style={'margin-bottom': '10px'}
-         ),
-         dcc.Textarea(
-             id='textarea-sme-comment',
-             placeholder="Enter mandatory comment explaining the change...",
-             style={'width': '100%', 'height': '80px', 'margin-bottom': '10px'}
-         ),
-         html.Button('Submit Review', id='button-submit-review', n_clicks=0, className='btn btn-primary')
-     ])
-
     # Rows are selected:
-    # Show the entire panel
-    # Show the controls container
-    # Update dropdown value and clear textarea
     return (details_content,  # Update text above controls
             {'display': 'block'},  # Show panel
             {'display': 'block'},  # Show controls
-            current_final_flag, "", REVIEW_FLAG_OPTIONS)  # Update values, set options
-
+            current_final_flag,  # Update store value
+            "")  # Clear comment
 
 # --- Callback to Handle Review Submission ---
 @callback(
     Output('store-data', 'data', allow_duplicate=True),
     Output('review-status', 'children'),
-    Output('data-table', 'selected_rows'), # Clear selection after submit
-    Output('review-panel', 'style', allow_duplicate=True), # Hide panel after submit
-    Output('review-controls-container', 'style', allow_duplicate=True), # Hide controls after submit
-    # Note: We don't need to clear dropdown/textarea here, update_review_panel will handle it
-    # when selected_rows becomes empty after clearing.
+    Output('data-table', 'selected_rows', allow_duplicate=True),  # Clear selection after submit
+    Output('review-panel', 'style', allow_duplicate=True),  # Hide panel after submit
+    Output('review-controls-container', 'style', allow_duplicate=True),  # Hide controls after submit
+    Output('flag-update-trigger', 'data'),  # ADD THIS OUTPUT for the trigger
     Input('button-submit-review', 'n_clicks'),
-    # Add State for selected_rows here, matching its position in the function arguments
     State('data-table', 'selected_rows'),
-    # These are now States referring to components in the initial layout
-    State('dropdown-final-flag', 'value'),
+    State('selected-qc-flag-store', 'data'),
     State('textarea-sme-comment', 'value'),
     State('store-data', 'data'),
     State('store-sme-username', 'data'),
@@ -515,7 +467,8 @@ def update_review_panel(selected_rows, table_data, stored_data_dict):
     State('data-table', 'data'),
     prevent_initial_call=True
 )
-def submit_review(n_clicks, selected_rows, new_flag, sme_comment, stored_data_dict, sme_username, filename, table_data):
+def submit_review(n_clicks, selected_rows, new_flag, sme_comment, stored_data_dict,
+                  sme_username, filename, table_data):
     """
     Processes the submission of a manual quality control review.
 
@@ -525,33 +478,24 @@ def submit_review(n_clicks, selected_rows, new_flag, sme_comment, stored_data_di
     3. Logs the review action for traceability
     4. Updates the stored data with the new flags
     5. Provides feedback about the review submission
+    6. Triggers automatic row selection for the next unflagged item
 
-    Args:
-        n_clicks (int): Number of times the submit button has been clicked
-        selected_rows (list): Indices of the selected rows in the data table
-        new_flag (int): The new quality flag value selected by the user
-        sme_comment (str): Comment explaining the reason for the flag change
-        stored_data_dict (list): Complete dataset stored in the application
-        sme_username (str): Username of the person submitting the review
-        filename (str): Name of the data file being reviewed
-        table_data (list): Data currently displayed in the table
-
-    Returns:
-        tuple: Multiple outputs that update the UI after submission:
-            - Updated data for storage
-            - Status message about the submission
-            - Empty list to clear selected rows
-            - Display settings to hide the review panel
-            - Display settings to hide the controls container
+    The flag-update-trigger is updated with information about which rows were modified,
+    allowing other components to react to these changes (e.g., auto-selecting the next
+    row that needs review).
     """
     if n_clicks == 0 or selected_rows is None or len(selected_rows) == 0 or stored_data_dict is None:
         raise PreventUpdate
 
     # --- Input Validation ---
     if new_flag is None:
-        return dash.no_update, html.Div("Error: Please select a final flag.", className="alert alert-warning"), dash.no_update, dash.no_update
+        return (dash.no_update,
+                html.Div("Error: Please select a final flag.", className="alert alert-warning"),
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update)
     if not sme_comment or sme_comment.strip() == "":
-         return dash.no_update, html.Div("Error: Please enter a comment.", className="alert alert-warning"), dash.no_update, dash.no_update
+        return (dash.no_update,
+                html.Div("Error: Please enter a comment.", className="alert alert-warning"),
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update)
 
     start_time = datetime.datetime.now()
     print("Submitting review...")
@@ -559,83 +503,100 @@ def submit_review(n_clicks, selected_rows, new_flag, sme_comment, stored_data_di
     df_full = pd.DataFrame(stored_data_dict)
 
     # --- Identify Rows to Update in the Full DataFrame ---
-    # Use the selected rows from the potentially filtered `table_data` to get unique identifiers
-    # Assuming 'DIS_SAMPLE_KEY_VALUE' is the unique key, or fall back to index if needed.
-    # This part is critical and depends on having a reliable way to link table rows to the main df.
     try:
-        # Attempt to use DIS_SAMPLE_KEY_VALUE if it exists and is reliable
         if 'DIS_SAMPLE_KEY_VALUE' in df_full.columns and df_full['DIS_SAMPLE_KEY_VALUE'].is_unique:
             selected_keys = [table_data[i]['DIS_SAMPLE_KEY_VALUE'] for i in selected_rows]
-            update_indices = df_full[df_full['DIS_SAMPLE_KEY_VALUE'].isin(selected_keys)].index
+            update_indices = df_full[df_full['DIS_SAMPLE_KEY_VALUE'].isin(selected_keys)].index.tolist()
         else:
-            # Fallback: Assume selected_rows directly index into df_full (Less Robust!)
-            # This requires careful state management if table is heavily filtered/paged/sorted.
-            # Consider adding the original index as a column to the table data if this fails.
             print("Warning: Using selected_rows index directly, may be unreliable with filtering/paging.")
-            update_indices = selected_rows # Use selected_rows directly if they map 1:1 to df_full's index after filtering/sorting. Needs verification.
-            # A better fallback might be needed depending on how data-table `data` is populated.
+            update_indices = selected_rows
 
         if len(update_indices) == 0:
-             raise ValueError("Could not map selected table rows to the main dataset.")
+            raise ValueError("Could not map selected table rows to the main dataset.")
 
     except Exception as e:
         print(f"Error mapping selected rows: {e}")
-        return dash.no_update, html.Div(f"Error mapping selected rows: {e}", className="alert alert-danger"), dash.no_update, dash.no_update
+        return (dash.no_update,
+                html.Div(f"Error mapping selected rows: {e}", className="alert alert-danger"),
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update)
 
     # --- Apply Updates and Log Changes ---
     log_entries = []
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    mission_descriptor = df_full['MISSION_DESCRIPTOR'].iloc[0] if not df_full.empty else "UnknownMission" # Get mission for log filename
+    timestamp = datetime.datetime.now()
+    timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+    mission_descriptor = df_full['MISSION_DESCRIPTOR'].iloc[0] if not df_full.empty else "UnknownMission"
 
-    # Make a copy to modify - important for Pandas >= 1.5 CoW
     df_updated = df_full.copy()
 
     for idx in update_indices:
         try:
-            # Ensure index exists in the copied dataframe
             if idx not in df_updated.index:
                 print(f"Warning: Index {idx} not found in DataFrame during update, skipping.")
                 continue
 
             original_auto_flag = df_updated.loc[idx, 'auto_qc_flag']
-            # Use a unique identifier for logging if available
-            data_point_id = df_updated.loc[idx, 'DIS_SAMPLE_KEY_VALUE'] if 'DIS_SAMPLE_KEY_VALUE' in df_updated.columns else f"Index_{idx}"
+            data_point_id = df_updated.loc[
+                idx, 'DIS_SAMPLE_KEY_VALUE'] if 'DIS_SAMPLE_KEY_VALUE' in df_updated.columns else f"Index_{idx}"
 
             # Update the final QC code
             df_updated.loc[idx, 'DIS_DETAIL_DATA_QC_CODE'] = new_flag
 
             # Create log entry
             log_data = {
-                'Timestamp': timestamp,
+                'Timestamp': timestamp_str,
                 'SME_Username': sme_username if sme_username else 'Not Provided',
                 'DataPoint_Identifier': data_point_id,
                 'Original_Auto_Flag': original_auto_flag,
                 'Assigned_Final_Flag': new_flag,
                 'SME_Comment': sme_comment
             }
-            # Append log entry to file
             append_to_log(log_data, mission_descriptor)
 
-        except KeyError as ke:
-            print(f"KeyError accessing index {idx} during review update: {ke}")
-            # Decide whether to continue or raise an error
-            continue # Skip this row and continue with others
         except Exception as e:
             print(f"Error processing review for index {idx}: {e}")
-            # Decide whether to continue or raise an error
-            return dash.no_update, html.Div(f"Error processing review update for index {idx}: {e}", className="alert alert-danger"), dash.no_update, dash.no_update
+            continue
+
+    # --- Find Next Row to Review ---
+    # This identifies the next row that might need review (e.g., flag 7 or flag 3)
+    # Prioritize rows with flag 7 (Requires Investigation), then flag 3 (Doubtful)
+    next_row_index = None
+
+    # Get rows that need review, excluding the ones just reviewed
+    remaining_rows = df_updated[~df_updated.index.isin(update_indices)]
+
+    # First priority: Flag 7 (Requires Investigation)
+    flag_7_rows = remaining_rows[remaining_rows['DIS_DETAIL_DATA_QC_CODE'] == 7]
+    if not flag_7_rows.empty:
+        next_row_index = flag_7_rows.index[0]
+    else:
+        # Second priority: Flag 3 (Doubtful)
+        flag_3_rows = remaining_rows[remaining_rows['DIS_DETAIL_DATA_QC_CODE'] == 3]
+        if not flag_3_rows.empty:
+            next_row_index = flag_3_rows.index[0]
+
+    # --- Create Trigger Data ---
+    # The trigger contains information about what was just updated and what should be selected next
+    trigger_data = {
+        'row_indices': update_indices,  # Rows that were just updated
+        'next_row_index': next_row_index,  # Next row to select (if any)
+        'timestamp': timestamp.isoformat(),  # When the update occurred
+        'action': 'review_submitted'  # Type of update
+    }
 
     end_time = datetime.datetime.now()
     processing_time = (end_time - start_time).total_seconds()
     print(f"Review submission processed {len(update_indices)} rows in {processing_time:.2f} seconds.")
 
-    # Return updated data, success message, clear selection, HIDE panel and controls
+    if next_row_index is not None:
+        print(f"Next row to review: {next_row_index}")
+
+    # Return updated data, success message, clear selection, hide panels, and trigger data
     return (df_updated.to_dict('records'),
             html.Div(f"Successfully updated {len(update_indices)} records.", className="alert alert-success"),
-            [],  # Clear selected rows (this will trigger update_review_panel to hide the panel)
-            {'display': 'none'},  # Explicitly hide panel here too for good measure
-            {'display': 'none'})  # Explicitly hide controls container here too
-
+            [],  # Clear selected rows
+            {'display': 'none'},  # Hide panel
+            {'display': 'none'},  # Hide controls
+            trigger_data)  # Trigger data for auto-selection
 
 # --- Callback for Downloading Updated CSV ---
 @callback(
@@ -789,3 +750,188 @@ def filter_table_on_map_click(clickData):
     # return filter_query
     print("Map click filtering needs robust implementation based on available point data.")
     raise PreventUpdate # Disable until robust filtering is implemented
+
+
+@callback(
+    Output('data-table', 'selected_rows'),
+    Input('flag-update-trigger', 'data'),
+    State('data-table', 'data'),
+    State('data-table', 'derived_virtual_data'),  # Filtered/sorted data
+    prevent_initial_call=True
+)
+def auto_select_flagged_row(trigger_data, table_data, derived_data):
+    """
+    Automatically selects the next row in the data table that needs review.
+
+    This callback is triggered after a flag update and helps streamline the review
+    process by automatically selecting the next row that requires attention.
+
+    Args:
+        trigger_data (dict): Contains information about the flag update:
+            - row_indices: List of rows that were just updated
+            - next_row_index: Index of the next row to select (if any)
+            - timestamp: When the update occurred
+            - action: Type of update that occurred
+        table_data (list): The full data currently in the table
+        derived_data (list): The filtered/sorted view of the data (if filters are applied)
+
+    Returns:
+        list: Selected row indices for the data table
+    """
+    if not trigger_data or trigger_data.get('action') != 'review_submitted':
+        return []
+
+    next_row_index = trigger_data.get('next_row_index')
+
+    if next_row_index is None:
+        # No more rows need review
+        return []
+
+    # Use derived_data if available (respects current filters/sorting)
+    data_to_search = derived_data if derived_data else table_data
+
+    # Find the position of next_row_index in the current table view
+    # This is important because the table might be filtered or sorted
+    for i, row in enumerate(data_to_search):
+        # Match by index or by a unique identifier
+        if 'index' in row and row['index'] == next_row_index:
+            return [i]
+        # Fallback: try to match by DIS_SAMPLE_KEY_VALUE if index is not available
+        elif ('DIS_SAMPLE_KEY_VALUE' in row and
+              row['DIS_SAMPLE_KEY_VALUE'] == table_data[next_row_index].get('DIS_SAMPLE_KEY_VALUE')):
+            return [i]
+
+    # If we couldn't find the row in the current view, it might be filtered out
+    print(f"Warning: Could not find row {next_row_index} in current table view")
+    return []
+
+
+# Callback to combine predefined and additional comments
+@callback(
+    Output('combined-comment-preview', 'children'),
+    [Input('predefined-comments-dropdown', 'value'),
+     Input('additional-comment-input', 'value')]
+)
+def update_combined_comment(predefined_values, additional_text):
+    """Combines predefined and additional comments into final comment."""
+    comments = []
+
+    # Get labels for selected predefined comments
+    if predefined_values:
+        PREDEFINED_COMMENTS = [
+        {"label": "Spike detected", "value": "spike"},
+        {"label": "Drift observed", "value": "drift"},
+        {"label": "Sensor malfunction", "value": "sensor_malfunction"},
+        {"label": "Environmental interference", "value": "env_interference"},
+        {"label": "Data gap", "value": "data_gap"},
+        {"label": "Outlier - confirmed valid", "value": "valid_outlier"},
+        {"label": "Biofouling suspected", "value": "biofouling"}
+    ]
+        selected_labels = [
+            comment['label']
+            for comment in PREDEFINED_COMMENTS
+            if comment['value'] in predefined_values
+        ]
+        comments.extend(selected_labels)
+
+    # Add additional comment if provided
+    if additional_text and additional_text.strip():
+        comments.append(additional_text.strip())
+
+    # Combine with semicolons
+    final_comment = '; '.join(comments) if comments else "No comment provided"
+    return final_comment
+
+
+# Callback to clear the review form
+@callback(
+    [Output('predefined-comments-dropdown', 'value'),
+     Output('additional-comment-input', 'value')],
+    Input('clear-review-btn', 'n_clicks'),
+    prevent_initial_call=True
+)
+def clear_review_form(n_clicks):
+    """Clears all review form inputs."""
+    return [], ""
+
+
+@callback(
+    [Output('selected-qc-flag-store', 'data'),
+     Output('selected-flag-display', 'children'),
+     Output('flag-btn-0', 'outline'),
+     Output('flag-btn-1', 'outline'),
+     Output('flag-btn-2', 'outline'),
+     Output('flag-btn-3', 'outline'),
+     Output('flag-btn-4', 'outline'),
+     Output('flag-btn-5', 'outline'),
+     Output('flag-btn-7', 'outline')],
+    [Input('flag-btn-0', 'n_clicks'),
+     Input('flag-btn-1', 'n_clicks'),
+     Input('flag-btn-2', 'n_clicks'),
+     Input('flag-btn-3', 'n_clicks'),
+     Input('flag-btn-4', 'n_clicks'),
+     Input('flag-btn-5', 'n_clicks'),
+     Input('flag-btn-7', 'n_clicks')],
+    prevent_initial_call=True
+)
+def handle_flag_selection(n0, n1, n2, n3, n4, n5, n7):
+    """Handles QC flag button clicks and updates the selected flag."""
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return dash.no_update
+
+    # Extract which button was clicked
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    flag_value = int(button_id.split('-')[-1])
+
+    # Create flag display message
+    flag_definitions = {
+        0: 'NoQC', 1: 'Good', 2: 'Inconsistent', 3: 'Doubtful',
+        4: 'Bad', 5: 'Modified', 7: 'RequiresInvestigation'
+    }
+    display_msg = f"Selected Flag: {flag_value} - {flag_definitions.get(flag_value, 'Unknown')}"
+
+    # Set button outlines (False = filled/selected, True = outline)
+    outlines = [True] * 7
+    flag_to_index = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 7: 6}
+    outlines[flag_to_index[flag_value]] = False
+
+    return flag_value, display_msg, *outlines
+
+
+# Update the callback that combines comments to also consider the flag
+@callback(
+    Output('textarea-sme-comment', 'value'),
+    [Input('predefined-comments-dropdown', 'value'),
+     State('textarea-sme-comment', 'value')]
+)
+def update_comment_field(predefined_values, current_additional):
+    """Updates the comment field with combined predefined comments."""
+    if not predefined_values:
+        return current_additional or ""
+
+    # Get the predefined comment labels
+    predefined_options = [
+        {"label": "Spike detected", "value": "spike"},
+        {"label": "Drift observed", "value": "drift"},
+        {"label": "Sensor malfunction", "value": "sensor_malfunction"},
+        {"label": "Environmental interference", "value": "env_interference"},
+        {"label": "Data gap", "value": "data_gap"},
+        {"label": "Outlier - confirmed valid", "value": "valid_outlier"},
+        {"label": "Biofouling suspected", "value": "biofouling"},
+        {"label": "Questionable gradient", "value": "gradient"},
+        {"label": "Outside expected range", "value": "out_of_range"},
+        {"label": "Inconsistent with nearby measurements", "value": "inconsistent"},
+        {"label": "Instrument calibration issue", "value": "calibration"},
+        {"label": "Data manually verified", "value": "verified"}
+    ]
+    selected_labels = [
+        opt['label'] for opt in predefined_options
+        if opt['value'] in predefined_values
+    ]
+
+    # If there's additional text, preserve it
+    if current_additional and not any(label in current_additional for label in selected_labels):
+        return '; '.join(selected_labels) + (f"; {current_additional}" if current_additional else "")
+
+    return '; '.join(selected_labels)

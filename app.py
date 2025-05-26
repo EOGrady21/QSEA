@@ -64,6 +64,7 @@ def build_upload_section():
         ])
     )
 
+
 def build_review_panel():
     """
     Creates the manual review panel of the application.
@@ -86,28 +87,73 @@ def build_review_panel():
             html.Div(id='review-panel-content', children="Select rows in the table below to enable review."),
             # This div will show status messages after review submission
             html.Div(id='review-status', style={'marginTop': '10px'}),
+
             # --- Container for Review Controls (Initially Hidden) ---
             html.Div(id='review-controls-container', style={'display': 'none'}, children=[
-                 dcc.Dropdown(
-                     id='dropdown-final-flag',
-                     # options are defined in callbacks.py, load them here if static or update dynamically
-                     # For now, just define the component placeholder
-                     options=[], # Placeholder options
-                     placeholder="Select New Final Flag",
-                     clearable=False,
-                     style={'margin-bottom': '10px'}
-                 ),
-                 dcc.Textarea(
-                     id='textarea-sme-comment',
-                     placeholder="Enter mandatory comment explaining the change...",
-                     style={'width': '100%', 'height': '80px', 'margin-bottom': '10px'}
-                 ),
-                 html.Button('Submit Review', id='button-submit-review', n_clicks=0, className='btn btn-primary')
+                # Hidden store to track the selected QC flag value
+                dcc.Store(id='selected-qc-flag-store'),
+
+                # Quick flag selection buttons
+                html.Div([
+                    html.Label("Select New QC Flag:", className="fw-bold mb-2"),
+                    dbc.ButtonGroup([
+                        dbc.Button("0: NoQC", id="flag-btn-0", color="secondary", outline=True, size="sm", n_clicks=0),
+                        dbc.Button("1: Good", id="flag-btn-1", color="success", outline=True, size="sm", n_clicks=0),
+                        dbc.Button("2: Inconsistent", id="flag-btn-2", color="info", outline=True, size="sm",
+                                   n_clicks=0),
+                        dbc.Button("3: Doubtful", id="flag-btn-3", color="warning", outline=True, size="sm",
+                                   n_clicks=0),
+                        dbc.Button("4: Bad", id="flag-btn-4", color="danger", outline=True, size="sm", n_clicks=0),
+                        dbc.Button("5: Modified", id="flag-btn-5", color="primary", outline=True, size="sm",
+                                   n_clicks=0),
+                        dbc.Button("7: Investigate", id="flag-btn-7", color="dark", outline=True, size="sm",
+                                   n_clicks=0),
+                    ], className="mb-3")
+                ]),
+
+                # Display selected flag
+                dbc.Alert(id="selected-flag-display", color="info", className="mb-3"),
+
+                # Predefined comments section
+                html.Div([
+                    html.Label("Quick Comments:", className="fw-bold"),
+                    dcc.Dropdown(
+                        id="predefined-comments-dropdown",
+                        options=[
+                            {"label": "Spike detected", "value": "spike"},
+                            {"label": "Drift observed", "value": "drift"},
+                            {"label": "Sensor malfunction", "value": "sensor_malfunction"},
+                            {"label": "Environmental interference", "value": "env_interference"},
+                            {"label": "Data gap", "value": "data_gap"},
+                            {"label": "Outlier - confirmed valid", "value": "valid_outlier"},
+                            {"label": "Biofouling suspected", "value": "biofouling"},
+                            {"label": "Questionable gradient", "value": "gradient"},
+                            {"label": "Outside expected range", "value": "out_of_range"},
+                            {"label": "Inconsistent with nearby measurements", "value": "inconsistent"},
+                            {"label": "Instrument calibration issue", "value": "calibration"},
+                            {"label": "Data manually verified", "value": "verified"}
+                        ],
+                        placeholder="Select predefined comments...",
+                        multi=True,
+                        clearable=True,
+                        className="mb-2"
+                    )
+                ]),
+
+                # Additional comment textarea
+                dcc.Textarea(
+                    id='textarea-sme-comment',
+                    placeholder="Add additional comments or elaborate on selections...",
+                    style={'width': '100%', 'height': '80px', 'margin-bottom': '10px'}
+                ),
+
+                # Submit button
+                html.Button('Submit Review', id='button-submit-review', n_clicks=0, className='btn btn-primary')
             ])
             # --- End Review Controls Container ---
         ]),
         id='review-panel',
-        style={'display': 'none'} # The entire panel is still hidden initially
+        style={'display': 'none'}  # The entire panel is still hidden initially
     )
 
 def build_output_section():
@@ -144,6 +190,12 @@ app.layout = dbc.Container(fluid=True, children=[
     dcc.Store(id='store-data'), # Main DataFrame store
     dcc.Store(id='store-filename'), # Input filename
     dcc.Store(id='store-sme-username'), # SME username
+
+    # Flag Update Trigger Store
+    # This store acts as a trigger to notify other components when a QC flag has been updated.
+    # It stores information about the most recently updated row(s) to enable automatic selection
+    # in the data table for easier review workflow.
+    dcc.Store(id='flag-update-trigger', data={'row_indices': [], 'timestamp': None}),
 
     # --- Top Row: Upload and Review Panels ---
     dbc.Row([
