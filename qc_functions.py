@@ -196,7 +196,7 @@ def test_1_6_sounding(df):
     min_reasonable_depth = -5     # Allow slightly negative for sensor offset near surface
 
     fail_indices = df[(df['DIS_HEADER_START_DEPTH'].notna()) & \
-                      ((df['DIS_HEADER_START_DEPTH'] < min_reasonable_depth) | \
+                      ((df['DIS_HEADER_START_DEPTH'] < min_reasonable_depth) |
                        (df['DIS_HEADER_START_DEPTH'] > max_reasonable_depth))].index
     update_flags(df, fail_indices, test_name, 4) # Bad flag (4)
     # TODO: Implement check against actual bathymetry data (requires external dataset and lookup)
