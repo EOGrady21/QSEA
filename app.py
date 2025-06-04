@@ -19,7 +19,7 @@ import callbacks
 # --- App Initialization ---
 # Use Dash Bootstrap Components for layout enhancements
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
-server = app.server # Expose server for deployment (e.g., Gunicorn)
+server = app.server # local dev
 
 # --- Reusable Components ---
 def build_upload_section():

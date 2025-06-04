@@ -121,8 +121,7 @@ def process_upload(contents, filename, sme_username):
         df_processed['auto_qc_details'] = df_processed['auto_qc_details'].apply(
             lambda x: str(x) if isinstance(x, (list, dict)) else ('' if pd.isna(x) else x)
         )
-        # If you ONLY need auto_qc_details_str for the table, you could even drop the original auto_qc_details column here
-        # df_processed = df_processed.drop(columns=['auto_qc_details']) # Only if auto_qc_details_str is sufficient
+
     elif 'auto_qc_details_str' in df_processed.columns:
         # If only auto_qc_details_str exists, ensure it's always a string or None/''
         df_processed['auto_qc_details_str'] = df_processed['auto_qc_details_str'].apply(
@@ -274,10 +273,11 @@ def update_visualizations_and_table(data_dict, filename):
     # --- 4. T-S / Nutrient Plot ---
     ts_nut_fig = go.Figure()
     # Requires specific DATA_TYPE_METHOD for Temp, Sal, Nitrate, Phosphate
+    # to do update to be robust to various data type names or add user option to select method names
     temp_methods = [m for m in df['DATA_TYPE_METHOD'].unique() if 'TEMP' in m]
     sal_methods = [m for m in df['DATA_TYPE_METHOD'].unique() if 'PSAL' in m] # Assuming Practical Salinity
-    nitrate_methods = [m for m in df['DATA_TYPE_METHOD'].unique() if 'NTRA' in m] # Adjust if needed
-    phos_methods = [m for m in df['DATA_TYPE_METHOD'].unique() if 'PHOS' in m] # Adjust if needed
+    nitrate_methods = [m for m in df['DATA_TYPE_METHOD'].unique() if 'NTRZ' in m]
+    phos_methods = [m for m in df['DATA_TYPE_METHOD'].unique() if 'PHOS' in m]
 
     if temp_methods and sal_methods:
         # Pivot or merge to get Temp and Sal on the same row (per profile/depth)
@@ -321,7 +321,7 @@ def update_visualizations_and_table(data_dict, filename):
         id='data-table',
         columns=[{"name": i, "id": i, "editable": (i == 'DIS_DETAIL_DATA_QC_CODE')} for i in cols_to_show],
         # Pass only a subset of data initially if df is very large
-        data=table_df.head(MAX_TABLE_ROWS).to_dict('records'), # Use .head() for large datasets
+        data=table_df.head(MAX_TABLE_ROWS).to_dict('records'),
         editable=True, # Only effective for columns marked editable
         row_selectable='multi',
         selected_rows=[],

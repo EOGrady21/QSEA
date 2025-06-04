@@ -15,7 +15,7 @@ Click on the browser address provided in terminal.
 
 This app is currently just a structure and does not have complete quality control testing or plotting functionalities. It is under development, proof of concept only. 
 
-Development TODO list
+** Development TODO list **
 - Add persistent data table visual below plots
 - add TS and nutrient ratio plots
 - add QC comparison threshold plots
@@ -23,3 +23,7 @@ Development TODO list
 - flags should be factors not continuous vars
 - horizontal scroll on data table or wrap text for qc test failures
 - add sample ID or dis sample key value to data table
+- save qc logs to a subfolder outside of version control?
+- in code TODOs
+- add custom thresholding to only run specific variables through specific QC tests
+- 
